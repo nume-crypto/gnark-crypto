@@ -2356,6 +2356,38 @@ func (z *Element) assertMatchVeryBigInt(t *testing.T, aHi uint64, aInt *big.Int)
 	}
 }
 
+func FuzzInverse(f *testing.F) {
+	f.Add(qElementWord0, qElementWord1, qElementWord2, qElementWord3)
+	f.Add(uint64(1), uint64(0), uint64(0), uint64(0))
+	f.Add(uint64(1), uint64(1), uint64(1), uint64(1))
+	f.Add(uint64(1), uint64(5), uint64(4), uint64(1))
+	e := rSquare
+	f.Add(e[0], e[1], e[2], e[3])
+	for i := uint64(0); i < 257; i++ {
+		e.SetUint64(i)
+		f.Add(e[0], e[1], e[2], e[3])
+		e.Neg(&e)
+		f.Add(e[0], e[1], e[2], e[3])
+	}
+
+	exp := Modulus()
+	exp.Sub(exp, new(big.Int).SetUint64(2))
+
+	f.Fuzz(func(t *testing.T, w0, w1, w2, w3 uint64) {
+		e := Element{w0, w1, w2, w3}
+		if e.biggerOrEqualModulus() {
+			return
+		}
+		f := e
+		e.Inverse(&e)
+		f.Exp(f, exp)
+
+		if !e.Equal(&f) {
+			t.Fatalf("inverse failed with %v", Element{w0, w1, w2, w3})
+		}
+	})
+}
+
 func TestElementInversionApproximation(t *testing.T) {
 	var x Element
 	for i := 0; i < 1000; i++ {

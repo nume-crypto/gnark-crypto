@@ -98,45 +98,6 @@ func BenchmarkElementInverse(b *testing.B) {
 
 }
 
-func BenchmarkMontReduce(b *testing.B) {
-	var x Element
-	xHiBase := mrand.Uint64()
-	x.SetRandom()
-	benchResElement.SetRandom()
-
-	b.Run("oldPositive", func(b *testing.B) {
-		xHi := xHiBase & ^signBitSelector
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			benchResElement.montReduceSignedOld(&x, xHi)
-		}
-	})
-
-	b.Run("newPositive", func(b *testing.B) {
-		xHi := xHiBase & ^signBitSelector
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			benchResElement.montReduceSigned(&x, xHi)
-		}
-	})
-
-	b.Run("oldNegative", func(b *testing.B) {
-		xHi := xHiBase | signBitSelector
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			benchResElement.montReduceSignedOld(&x, xHi)
-		}
-	})
-
-	b.Run("newNegative", func(b *testing.B) {
-		xHi := xHiBase | signBitSelector
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			benchResElement.montReduceSigned(&x, xHi)
-		}
-	})
-}
-
 func BenchmarkElementButterfly(b *testing.B) {
 	var x Element
 	x.SetRandom()
@@ -366,7 +327,6 @@ func init() {
 		staticTestValues = append(staticTestValues, a)
 	}
 
-	qMinusTwo = big.NewInt(0) //turn off fallback for Inverse
 }
 
 func TestElementReduce(t *testing.T) {
@@ -2312,6 +2272,38 @@ func (z *Element) assertMatchVeryBigInt(t *testing.T, aHi uint64, aInt *big.Int)
 	}
 }
 
+func FuzzInverse(f *testing.F) {
+	f.Add(qElementWord0, qElementWord1, qElementWord2, qElementWord3)
+	f.Add(uint64(1), uint64(0), uint64(0), uint64(0))
+	f.Add(uint64(1), uint64(1), uint64(1), uint64(1))
+	f.Add(uint64(1), uint64(5), uint64(4), uint64(1))
+	e := rSquare
+	f.Add(e[0], e[1], e[2], e[3])
+	for i := uint64(0); i < 257; i++ {
+		e.SetUint64(i)
+		f.Add(e[0], e[1], e[2], e[3])
+		e.Neg(&e)
+		f.Add(e[0], e[1], e[2], e[3])
+	}
+
+	exp := Modulus()
+	exp.Sub(exp, new(big.Int).SetUint64(2))
+
+	f.Fuzz(func(t *testing.T, w0, w1, w2, w3 uint64) {
+		e := Element{w0, w1, w2, w3}
+		if e.biggerOrEqualModulus() {
+			return
+		}
+		f := e
+		e.Inverse(&e)
+		f.Exp(f, exp)
+
+		if !e.Equal(&f) {
+			t.Fatalf("inverse failed with %v", Element{w0, w1, w2, w3})
+		}
+	})
+}
+
 func TestElementInversionApproximation(t *testing.T) {
 	var x Element
 	for i := 0; i < 1000; i++ {
@@ -2691,14 +2683,14 @@ func testLinearComb(t *testing.T, x *Element, xC int64, y *Element, yC int64) {
 	montReduce(&p1, &p1)
 
 	var z Element
-	z.linearComb(x, xC, y, yC)
+	z.linearCombSosSigned(x, xC, y, yC)
 	z.assertMatchVeryBigInt(t, 0, &p1)
 }
 
 func testBigNumWMul(t *testing.T, a *Element, c int64) {
 	var aHi uint64
 	var aTimes Element
-	aHi = aTimes.mulWNonModular(a, c)
+	aHi = aTimes.mulWRegular(a, c)
 
 	assertMulProduct(t, a, c, &aTimes, aHi)
 }

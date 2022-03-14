@@ -1079,8 +1079,8 @@ func (z *Element) Inverse(x *Element) *Element {
 
 	u := Element{1}
 
-	// Update factors: we get [u; v] ← [f₀ g₀; f₁ g₁] [u; v]
-	// cᵢ = fᵢ + 2³¹ - 1 + 2³² * (gᵢ + 2³¹ - 1)
+	// Update factors: we get [u; v]:= [f0 g0; f1 g1] [u; v]
+	// c_i = f_i + 2³¹ - 1 + 2³² * (g_i + 2³¹ - 1)
 	var c0, c1 int64
 
 	// Saved update factors to reduce the number of field multiplications
@@ -1097,13 +1097,11 @@ func (z *Element) Inverse(x *Element) *Element {
 		n := max(a.BitLen(), b.BitLen())
 		aApprox, bApprox := approximate(&a, n), approximate(&b, n)
 
-		// f₀, g₀, f₁, g₁ = 1, 0, 0, 1
+		// After 0 iterations, we have f₀ ≤ 2⁰ and f₁ < 2⁰
+		// f0, g0, f1, g1 = 1, 0, 0, 1
 		c0, c1 = updateFactorIdentityMatrixRow0, updateFactorIdentityMatrixRow1
 
 		for j := 0; j < approxLowBitsN; j++ {
-
-			// -2ʲ < f₀, f₁ ≤ 2ʲ
-			// |f₀| + |f₁| < 2ʲ⁺¹
 
 			if aApprox&1 == 0 {
 				aApprox /= 2
@@ -1113,20 +1111,17 @@ func (z *Element) Inverse(x *Element) *Element {
 					s = bApprox - aApprox
 					bApprox = aApprox
 					c0, c1 = c1, c0
-					// invariants unchanged
 				}
 
 				aApprox = s / 2
 				c0 = c0 - c1
 
-				// Now |f₀| < 2ʲ⁺¹ ≤ 2ʲ⁺¹ (only the weaker inequality is needed, strictly speaking)
-				// Started with f₀ > -2ʲ and f₁ ≤ 2ʲ, so f₀ - f₁ > -2ʲ⁺¹
-				// Invariants unchanged for f₁
+				// Now |f₀| < 2ʲ + 2ʲ = 2ʲ⁺¹
+				// |f₁| ≤ 2ʲ still
 			}
 
 			c1 *= 2
-			// -2ʲ⁺¹ < f₁ ≤ 2ʲ⁺¹
-			// So now |f₀| + |f₁| < 2ʲ⁺²
+			// |f₁| ≤ 2ʲ⁺¹
 		}
 
 		s = a
@@ -1134,8 +1129,6 @@ func (z *Element) Inverse(x *Element) *Element {
 		var g0 int64
 		// from this point on c0 aliases for f0
 		c0, g0 = updateFactorsDecompose(c0)
-		// -2³¹ < f0, g0 ≤ 2³¹ TODO: USELESS
-		// 0 ≤ a, b < 2²⁵⁵ ⇒ -2³¹⁹ + 1 < -2²⁸⁶ < f₀a + g₀b < 2²⁸⁷ < 2³¹⁹ TODO: USELESS
 		aHi := a.linearCombNonModular(&s, c0, &b, g0)
 		if aHi&signBitSelector != 0 {
 			// if aHi < 0
@@ -1151,7 +1144,6 @@ func (z *Element) Inverse(x *Element) *Element {
 		var f1 int64
 		// from this point on c1 aliases for g0
 		f1, c1 = updateFactorsDecompose(c1)
-		// -2³¹⁹ + 1 < f₁a + g₁b < TODO: USELESS
 		bHi := b.linearCombNonModular(&s, f1, &b, c1)
 		if bHi&signBitSelector != 0 {
 			// if bHi < 0
@@ -1166,24 +1158,20 @@ func (z *Element) Inverse(x *Element) *Element {
 
 		if i&1 == 1 {
 			// Combine current update factors with previously stored ones
-			// [F₀, G₀; F₁, G₁] ← [f₀, g₀; f₁, g₁] [pf₀, pg₀; pf₁, pg₁], with capital letters denoting new combined values
-			// We get |F₀| = | f₀pf₀ + g₀pf₁ | ≤ |f₀pf₀| + |g₀pf₁| = |f₀| |pf₀| + |g₀| |pf₁| ≤ 2ᵏ⁻¹|pf₀| + 2ᵏ⁻¹|pf₁|
-			// = 2ᵏ⁻¹ (|pf₀| + |pf₁|) < 2ᵏ⁻¹ 2ᵏ = 2²ᵏ⁻¹
-			// So |F₀| < 2²ᵏ⁻¹ meaning it fits in a 2k-bit signed register
+			// [f₀, g₀; f₁, g₁] ← [f₀, g₀; f₁, g₀] [pf₀, pg₀; pf₀, pg₀]
+			// We have |f₀|, |g₀|, |pf₀|, |pf₁| ≤ 2ᵏ⁻¹, and that |pf_i| < 2ᵏ⁻¹ for i ∈ {0, 1}
+			// Then for the new value we get |f₀| < 2ᵏ⁻¹ × 2ᵏ⁻¹ + 2ᵏ⁻¹ × 2ᵏ⁻¹ = 2²ᵏ⁻¹
+			// Which leaves us with an extra bit for the sign
 
-			// c₀ aliases f₀, c₁ aliases g₁
+			// c0 aliases f0, c1 aliases g1
 			c0, g0, f1, c1 = c0*pf0+g0*pf1,
 				c0*pg0+g0*pg1,
 				f1*pf0+c1*pf1,
 				f1*pg0+c1*pg1
 
 			s = u
-
-			// 0 ≤ u, v < 2²⁵⁵
-			// |F₀|, |G₀| < 2⁶³
-			u.linearComb(&u, c0, &v, g0)
-			// |F₁|, |G₁| < 2⁶³
-			v.linearComb(&s, f1, &v, c1)
+			u.linearCombSosSigned(&u, c0, &v, g0)
+			v.linearCombSosSigned(&s, f1, &v, c1)
 
 		} else {
 			// Save update factors
@@ -1191,13 +1179,12 @@ func (z *Element) Inverse(x *Element) *Element {
 		}
 	}
 
-	// For every iteration that we miss, v is not being multiplied by 2ᵏ⁻¹
+	// For every iteration that we miss, v is not being multiplied by 2²ᵏ⁻²
 	const pSq int64 = 1 << (2 * (k - 1))
-	// If the function is constant-time ish, this loop will not run (no real need to take it out explicitly)
+	// If the function is constant-time ish, this loop will not run (probably no need to take it out explicitly)
 	for ; i < invIterationsN; i += 2 {
 		v.mulWSigned(&v, pSq)
 	}
-
 
 	z.Mul(&v, &Element{
 		inversionCorrectionFactorWord0,
@@ -1205,21 +1192,7 @@ func (z *Element) Inverse(x *Element) *Element {
 		inversionCorrectionFactorWord2,
 		inversionCorrectionFactorWord3,
 	})
-
-	// correctness check
-
 	return z
-}
-
-var qMinusTwo *big.Int //test routines can set this to an incorrect value to fail whenever inverseExp was triggered
-
-// inverseExp is a fallback in case the inversion algorithm failed
-func (z *Element) inverseExp(x *Element) *Element {
-	if qMinusTwo == nil {
-		qMinusTwo = Modulus()
-		qMinusTwo.Sub(qMinusTwo, big.NewInt(2))
-	}
-	return z.Exp(*x, qMinusTwo)
 }
 
 // approximate a big number x into a single 64 bit word using its uppermost and lowermost bits
@@ -1247,26 +1220,19 @@ func approximate(x *Element, nBits int) uint64 {
 	return lo | mid | hi
 }
 
-// linearComb z = xC * x + yC * y;
-// 0 ≤ x, y < 2²⁵⁵
-// |xC|, |yC| < 2⁶³
-func (z *Element) linearComb(x *Element, xC int64, y *Element, yC int64) {
-	// | (hi, z) | < 2 * 2⁶³ * 2²⁵⁵ = 2³¹⁹
+func (z *Element) linearCombSosSigned(x *Element, xC int64, y *Element, yC int64) {
 	hi := z.linearCombNonModular(x, xC, y, yC)
 	z.montReduceSigned(z, hi)
 }
 
-// TODO: Can this be replaced by montReduce(x) + xHi, the addition done in the field? Would that be less efficient?
-// TODO: This would have an API simplicity benefit since montReduce(x) is just FromMont
-// montReduceSigned z = (xHi * r + x) * r⁻¹ using the SOS algorithm
-// Requires |xHi| < 2⁶³. Most significant bit of xHi is the sign bit.
-func (z *Element) montReduceSignedOld(x *Element, xHi uint64) {
+// montReduceSigned SOS algorithm; xHi must be at most 63 bits long. Last bit of xHi may be used as a sign bit
+func (z *Element) montReduceSigned(x *Element, xHi uint64) {
 
 	const signBitRemover = ^signBitSelector
 	neg := xHi&signBitSelector != 0
 	// the SOS implementation requires that most significant bit is 0
 	// Let X be xHi*r + x
-	// If X is negative we would have initially stored it as 2⁶⁴ r + X
+	// note that if X is negative we would have initially stored it as 2⁶⁴ r + X
 	xHi &= signBitRemover
 	// with this a negative X is now represented as 2⁶³ r + X
 
@@ -1280,14 +1246,12 @@ func (z *Element) montReduceSignedOld(x *Element, xHi uint64) {
 	C, t[2] = madd2(m, qElementWord2, x[2], C)
 	C, t[3] = madd2(m, qElementWord3, x[3], C)
 
-	// m * qElement[3] ≤ (2⁶⁴ - 1) * (2⁶³ - 1) = 2¹²⁷ - 2⁶⁴ - 2⁶³ + 1
-	// x[3] + C ≤ 2*(2⁶⁴ - 1) = 2⁶⁵ - 2
-	// On LHS, (C, t[3]) ≤ 2¹²⁷ - 2⁶⁴ - 2⁶³ + 1 + 2⁶⁵ - 2 = 2¹²⁷ + 2⁶³ - 1
-	// So on LHS, C ≤ 2⁶³
+	// the high word of m * qElement[3] is at most 62 bits
+	// x[3] + C is at most 65 bits (high word at most 1 bit)
+	// Thus the resulting C will be at most 63 bits
 	t[4] = xHi + C
-	// xHi + C < 2⁶³ + 2⁶³ = 2⁶⁴
+	// xHi and C are 63 bits, therefore no overflow
 
-	// <standard SOS>
 	{
 		const i = 1
 		m = t[i] * qInvNegLsw
@@ -1329,8 +1293,6 @@ func (z *Element) montReduceSignedOld(x *Element, xHi uint64) {
 		z[2], b = bits.Sub64(z[2], 13281191951274694749, b)
 		z[3], _ = bits.Sub64(z[3], 3486998266802970665, b)
 	}
-	// </standard SOS>
-
 	if neg {
 		// We have computed ( 2⁶³ r + X ) r⁻¹ = 2⁶³ + X r⁻¹ instead
 		var b uint64
@@ -1340,54 +1302,6 @@ func (z *Element) montReduceSignedOld(x *Element, xHi uint64) {
 		z[3], b = bits.Sub64(z[3], 0, b)
 
 		// Occurs iff x == 0 && xHi < 0, i.e. X = rX' for -2⁶³ ≤ X' < 0
-		if b != 0 {
-			// z[3] = -1
-			// negative: add q
-			const neg1 = 0xFFFFFFFFFFFFFFFF
-
-			b = 0
-			z[0], b = bits.Add64(z[0], qElementWord0, b)
-			z[1], b = bits.Add64(z[1], qElementWord1, b)
-			z[2], b = bits.Add64(z[2], qElementWord2, b)
-			z[3], _ = bits.Add64(neg1, qElementWord3, b)
-		}
-	}
-}
-
-func (z *Element) montReduceSigned(x *Element, xHi uint64) {
-
-	*z = *x
-	z.FromMont() // z = x r⁻¹
-
-	if pos := xHi&signBitSelector == 0; pos {
-
-		// (xHi r + x) r⁻¹ = xHi + xr⁻¹ = xHi + z
-		var c uint64
-		z[0], c = bits.Add64(z[0], xHi, 0)
-		z[1], c = bits.Add64(z[1], 0, c)
-		z[2], c = bits.Add64(z[2], 0, c)
-		z[3], _ = bits.Add64(z[3], 0, c)
-
-		// if z > q → z -= q
-		// note: this is NOT constant time
-		if !(z[3] < 3486998266802970665 || (z[3] == 3486998266802970665 && (z[2] < 13281191951274694749 || (z[2] == 13281191951274694749 && (z[1] < 10917124144477883021 || (z[1] == 10917124144477883021 && (z[0] < 4332616871279656263))))))) {
-			var b uint64
-			z[0], b = bits.Sub64(z[0], 4332616871279656263, 0)
-			z[1], b = bits.Sub64(z[1], 10917124144477883021, b)
-			z[2], b = bits.Sub64(z[2], 13281191951274694749, b)
-			z[3], _ = bits.Sub64(z[3], 3486998266802970665, b)
-		}
-
-	} else {
-		// The real input value is xHi r + x - 2⁶⁴r
-		// So the desired output is xr⁻¹ - (2⁶⁴ - xHi)
-		// Since xHi != 0, 2⁶⁴ - xHi is at most 64 bits
-		var b uint64
-		z[0], b = bits.Sub64(z[0], -xHi, 0)
-		z[1], b = bits.Sub64(z[1], 0, b)
-		z[2], b = bits.Sub64(z[2], 0, b)
-		z[3], b = bits.Sub64(z[3], 0, b)
-
 		if b != 0 {
 			// z[3] = -1
 			// negative: add q
@@ -1424,8 +1338,9 @@ func (z *Element) neg(x *Element, xHi uint64) uint64 {
 	return xHi
 }
 
-// mulWNonModular multiplies by one word in non-montgomery, without reducing
-func (z *Element) mulWNonModular(x *Element, y int64) uint64 {
+// regular multiplication by one word regular (non montgomery)
+// Fewer additions than the branch-free for positive y. Could be faster on some architectures
+func (z *Element) mulWRegular(x *Element, y int64) uint64 {
 
 	// w := abs(y)
 	m := y >> 63
@@ -1444,12 +1359,74 @@ func (z *Element) mulWNonModular(x *Element, y int64) uint64 {
 	return c
 }
 
-// linearCombNonModular computes a linear combination without modular reduction
+/*
+Removed: seems slower
+// mulWRegular branch-free regular multiplication by one word (non montgomery)
+func (z *Element) mulWRegularBf(x *Element, y int64) uint64 {
+
+	w := uint64(y)
+	allNeg := uint64(y >> 63)	// -1 if y < 0, 0 o.w
+
+	// s[0], s[1] so results are not stored immediately in z.
+	// x[i] will be needed in the i+1 th iteration. We don't want to overwrite it in case x = z
+	var s [2]uint64
+	var h [2]uint64
+
+	h[0], s[0] = bits.Mul64(x[0], w)
+
+	c := uint64(0)
+	b := uint64(0)
+
+		{
+			const curI = 1 % 2
+			const prevI = 1 - curI
+			const iMinusOne = 1 - 1
+
+			h[curI], s[curI] = bits.Mul64(x[1], w)
+			s[curI], c = bits.Add64(s[curI], h[prevI], c)
+			s[curI], b = bits.Sub64(s[curI], allNeg & x[iMinusOne], b)
+			z[iMinusOne] = s[prevI]
+		}
+
+		{
+			const curI = 2 % 2
+			const prevI = 1 - curI
+			const iMinusOne = 2 - 1
+
+			h[curI], s[curI] = bits.Mul64(x[2], w)
+			s[curI], c = bits.Add64(s[curI], h[prevI], c)
+			s[curI], b = bits.Sub64(s[curI], allNeg & x[iMinusOne], b)
+			z[iMinusOne] = s[prevI]
+		}
+
+		{
+			const curI = 3 % 2
+			const prevI = 1 - curI
+			const iMinusOne = 3 - 1
+
+			h[curI], s[curI] = bits.Mul64(x[3], w)
+			s[curI], c = bits.Add64(s[curI], h[prevI], c)
+			s[curI], b = bits.Sub64(s[curI], allNeg & x[iMinusOne], b)
+			z[iMinusOne] = s[prevI]
+		}
+	{
+		const curI = 4 % 2
+		const prevI = 1 - curI
+		const iMinusOne = 3
+
+		s[curI], _ = bits.Sub64(h[prevI], allNeg & x[iMinusOne], b)
+		z[iMinusOne] = s[prevI]
+
+		return s[curI] + c
+	}
+}*/
+
+// Requires NoCarry
 func (z *Element) linearCombNonModular(x *Element, xC int64, y *Element, yC int64) uint64 {
 	var yTimes Element
 
-	yHi := yTimes.mulWNonModular(y, yC)
-	xHi := z.mulWNonModular(x, xC)
+	yHi := yTimes.mulWRegular(y, yC)
+	xHi := z.mulWRegular(x, xC)
 
 	carry := uint64(0)
 	z[0], carry = bits.Add64(z[0], yTimes[0], carry)
