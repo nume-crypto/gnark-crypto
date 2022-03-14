@@ -1198,7 +1198,6 @@ func (z *Element) Inverse(x *Element) *Element {
 		v.mulWSigned(&v, pSq)
 	}
 
-	u.Set(x) // for correctness check
 
 	z.Mul(&v, &Element{
 		inversionCorrectionFactorWord0,
@@ -1208,10 +1207,6 @@ func (z *Element) Inverse(x *Element) *Element {
 	})
 
 	// correctness check
-	v.Mul(&u, z)
-	if !v.IsOne() && !u.IsZero() {
-		return z.inverseExp(&u)
-	}
 
 	return z
 }
