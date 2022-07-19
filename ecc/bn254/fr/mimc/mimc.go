@@ -27,7 +27,7 @@ import (
 
 const (
 	mimcNbRounds = 91
-	seed         = "seed"   // seed to derive the constants
+	seed         = "mimc"   // seed to derive the constants
 	BlockSize    = fr.Bytes // BlockSize size that mimc consumes
 )
 
@@ -148,6 +148,8 @@ func (d *digest) encrypt(m fr.Element) fr.Element {
 		tmp.Add(&m, &d.h).Add(&tmp, &mimcConstants[i])
 		m.Square(&tmp).
 			Square(&m).
+			Mul(&m, &tmp).
+			Mul(&m, &tmp).
 			Mul(&m, &tmp)
 	}
 	m.Add(&m, &d.h)
