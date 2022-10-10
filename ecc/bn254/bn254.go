@@ -40,10 +40,10 @@ package bn254
 import (
 	"math/big"
 
-	"github.com/consensys/gnark-crypto/ecc"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
-	"github.com/consensys/gnark-crypto/ecc/bn254/internal/fptower"
+	"github.com/nume-crypto/gnark-crypto/ecc"
+	"github.com/nume-crypto/gnark-crypto/ecc/bn254/fp"
+	"github.com/nume-crypto/gnark-crypto/ecc/bn254/fr"
+	"github.com/nume-crypto/gnark-crypto/ecc/bn254/internal/fptower"
 )
 
 // ID bn254 ID
@@ -107,7 +107,6 @@ type E6 = fptower.E6
 
 // 𝔽p¹²
 type E12 = fptower.E12
-
 
 func init() {
 
