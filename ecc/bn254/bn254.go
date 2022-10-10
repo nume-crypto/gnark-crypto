@@ -72,6 +72,18 @@ var xGen big.Int
 // trace - 1 = 6x₀²
 var fixedCoeff big.Int
 
+// expose the tower
+
+// 𝔽p²
+type E2 = fptower.E2
+
+// 𝔽p⁶
+type E6 = fptower.E6
+
+// 𝔽p¹²
+type E12 = fptower.E12
+
+
 func init() {
 
 	bCurveCoeff.SetUint64(3)
