@@ -36,7 +36,7 @@ type G2Jac struct {
 	X, Y, Z fp.Element
 }
 
-//  g2JacExtended parameterized Jacobian coordinates (x=X/ZZ, y=Y/ZZZ, ZZ³=ZZZ²)
+// g2JacExtended parameterized Jacobian coordinates (x=X/ZZ, y=Y/ZZZ, ZZ³=ZZZ²)
 type g2JacExtended struct {
 	X, Y, ZZ, ZZZ fp.Element
 }
@@ -47,6 +47,13 @@ type g2JacExtended struct {
 // Set sets p to the provided point
 func (p *G2Affine) Set(a *G2Affine) *G2Affine {
 	p.X, p.Y = a.X, a.Y
+	return p
+}
+
+// setInfinity sets p to O
+func (p *G2Affine) setInfinity() *G2Affine {
+	p.X.SetZero()
+	p.Y.SetZero()
 	return p
 }
 
@@ -336,7 +343,7 @@ func (p *G2Jac) String() string {
 	return _p.String()
 }
 
-// FromAffine sets p = Q, p in Jacboian, Q in affine
+// FromAffine sets p = Q, p in Jacobian, Q in affine
 func (p *G2Jac) FromAffine(Q *G2Affine) *G2Jac {
 	if Q.IsInfinity() {
 		p.Z.SetZero()
@@ -596,15 +603,15 @@ func (p *g2JacExtended) add(q *g2JacExtended) *g2JacExtended {
 		return p
 	}
 
-	var A, B, X1ZZ2, X2ZZ1, Y1ZZZ2, Y2ZZZ1 fp.Element
+	var A, B, U1, U2, S1, S2 fp.Element
 
 	// p2: q, p1: p
-	X2ZZ1.Mul(&q.X, &p.ZZ)
-	X1ZZ2.Mul(&p.X, &q.ZZ)
-	A.Sub(&X2ZZ1, &X1ZZ2)
-	Y2ZZZ1.Mul(&q.Y, &p.ZZZ)
-	Y1ZZZ2.Mul(&p.Y, &q.ZZZ)
-	B.Sub(&Y2ZZZ1, &Y1ZZZ2)
+	U2.Mul(&q.X, &p.ZZ)
+	U1.Mul(&p.X, &q.ZZ)
+	A.Sub(&U2, &U1)
+	S2.Mul(&q.Y, &p.ZZZ)
+	S1.Mul(&p.Y, &q.ZZZ)
+	B.Sub(&S2, &S1)
 
 	if A.IsZero() {
 		if B.IsZero() {
@@ -616,11 +623,7 @@ func (p *g2JacExtended) add(q *g2JacExtended) *g2JacExtended {
 		return p
 	}
 
-	var U1, U2, S1, S2, P, R, PP, PPP, Q, V fp.Element
-	U1.Mul(&p.X, &q.ZZ)
-	U2.Mul(&q.X, &p.ZZ)
-	S1.Mul(&p.Y, &q.ZZZ)
-	S2.Mul(&q.Y, &p.ZZZ)
+	var P, R, PP, PPP, Q, V fp.Element
 	P.Sub(&U2, &U1)
 	R.Sub(&S2, &S1)
 	PP.Square(&P)

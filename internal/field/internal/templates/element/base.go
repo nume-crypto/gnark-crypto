@@ -161,7 +161,7 @@ func (z *{{.ElementName}}) SetInterface(i1 interface{}) (*{{.ElementName}}, erro
 	case int:
 		return z.SetInt64(int64(c1)), nil
 	case string:
-		return z.SetString(c1), nil
+		return z.SetString(c1)
 	case *big.Int:
 		if c1 == nil {
 			return nil, errors.New("can't set {{.PackageName}}.{{.ElementName}} with <nil>")
@@ -619,7 +619,7 @@ func (z *{{.ElementName}}) Select(c int, x0 *{{.ElementName}}, x1 *{{.ElementNam
 func _mulGeneric(z,x,y *{{.ElementName}}) {
 	// see Mul for algorithm documentation
 	{{ if eq $.NbWords 1}}
-		{{ template "mul_cios_one_limb" dict "all" . "V1" "x" "V2" "y" }}
+		z.Mul(x,y)
 	{{ else if .NoCarry}}
 		{{ template "mul_nocarry" dict "all" . "V1" "x" "V2" "y"}}
 		{{ template "reduce"  . }}

@@ -20,9 +20,11 @@ import (
 	"fmt"
 	"math/big"
 	"math/bits"
+	"math/rand"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark-crypto/ecc/bls24-315/fr"
@@ -54,6 +56,13 @@ func TestMultiExpG1(t *testing.T) {
 		samplePoints[i-1].FromJacobian(&g)
 		g.AddAssign(&g1Gen)
 	}
+
+	// sprinkle some points at infinity
+	rand.Seed(time.Now().UnixNano())
+	samplePoints[rand.Intn(nbSamples)].setInfinity()
+	samplePoints[rand.Intn(nbSamples)].setInfinity()
+	samplePoints[rand.Intn(nbSamples)].setInfinity()
+	samplePoints[rand.Intn(nbSamples)].setInfinity()
 
 	// final scalar to use in double and add method (without mixer factor)
 	// n(n+1)(2n+1)/6  (sum of the squares from 1 to n)
@@ -92,7 +101,14 @@ func TestMultiExpG1(t *testing.T) {
 		genScalar,
 	))
 
-	properties.Property("[G1] Multi exponentation (c=5, c=16) should be consistent with sum of square", prop.ForAll(
+	// cRange is generated from template and contains the available parameters for the multiexp window size
+	cRange := []uint64{4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21}
+	if testing.Short() {
+		// test only "odd" and "even" (ie windows size divide word size vs not)
+		cRange = []uint64{5, 16}
+	}
+
+	properties.Property(fmt.Sprintf("[G1] Multi exponentation (c in %v) should be consistent with sum of square", cRange), prop.ForAll(
 		func(mixer fr.Element) bool {
 
 			var expected G1Jac
@@ -111,13 +127,62 @@ func TestMultiExpG1(t *testing.T) {
 					FromMont()
 			}
 
-			scalars5, _ := partitionScalars(sampleScalars[:], 5, false, runtime.NumCPU())
-			scalars16, _ := partitionScalars(sampleScalars[:], 16, false, runtime.NumCPU())
+			results := make([]G1Jac, len(cRange)+1)
+			for i, c := range cRange {
+				scalars, _ := partitionScalars(sampleScalars[:], c, false, runtime.NumCPU())
+				msmInnerG1Jac(&results[i], int(c), samplePoints[:], scalars, false)
+				if c == 16 {
+					// split the first chunk
+					msmInnerG1Jac(&results[len(results)-1], 16, samplePoints[:], scalars, true)
+				}
+			}
+			for i := 1; i < len(results); i++ {
+				if !results[i].Equal(&results[i-1]) {
+					return false
+				}
+			}
+			return true
+		},
+		genScalar,
+	))
 
-			var r5, r16 G1Jac
-			r5.msmC5(samplePoints[:], scalars5, false)
-			r16.msmC16(samplePoints[:], scalars16, true)
-			return (r5.Equal(&expected) && r16.Equal(&expected))
+	properties.Property(fmt.Sprintf("[G1] Multi exponentation (c in %v) of points at infinity should output a point at infinity", cRange), prop.ForAll(
+		func(mixer fr.Element) bool {
+
+			var samplePointsZero [nbSamples]G1Affine
+			copy(samplePointsZero[:], samplePoints[:])
+
+			var expected G1Jac
+
+			// compute expected result with double and add
+			var finalScalar, mixerBigInt big.Int
+			finalScalar.Mul(&scalar, mixer.ToBigIntRegular(&mixerBigInt))
+			expected.ScalarMultiplication(&g1Gen, &finalScalar)
+
+			// mixer ensures that all the words of a fpElement are set
+			var sampleScalars [nbSamples]fr.Element
+
+			for i := 1; i <= nbSamples; i++ {
+				sampleScalars[i-1].SetUint64(uint64(i)).
+					Mul(&sampleScalars[i-1], &mixer).
+					FromMont()
+			}
+
+			results := make([]G1Jac, len(cRange)+1)
+			for i, c := range cRange {
+				scalars, _ := partitionScalars(sampleScalars[:], c, false, runtime.NumCPU())
+				msmInnerG1Jac(&results[i], int(c), samplePointsZero[:], scalars, false)
+				if c == 16 {
+					// split the first chunk
+					msmInnerG1Jac(&results[len(results)-1], 16, samplePointsZero[:], scalars, true)
+				}
+			}
+			for i := 1; i < len(results); i++ {
+				if !results[i].Equal(&results[i-1]) {
+					return false
+				}
+			}
+			return true
 		},
 		genScalar,
 	))
@@ -148,7 +213,7 @@ func TestMultiExpG1(t *testing.T) {
 			var finalBigScalar fr.Element
 			var finalBigScalarBi big.Int
 			var op1ScalarMul G1Affine
-			finalBigScalar.SetString("9455").Mul(&finalBigScalar, &mixer)
+			finalBigScalar.SetUint64(9455).Mul(&finalBigScalar, &mixer)
 			finalBigScalar.ToBigIntRegular(&finalBigScalarBi)
 			op1ScalarMul.ScalarMultiplication(&g1GenAff, &finalBigScalarBi)
 
@@ -285,6 +350,13 @@ func TestMultiExpG2(t *testing.T) {
 		g.AddAssign(&g2Gen)
 	}
 
+	// sprinkle some points at infinity
+	rand.Seed(time.Now().UnixNano())
+	samplePoints[rand.Intn(nbSamples)].setInfinity()
+	samplePoints[rand.Intn(nbSamples)].setInfinity()
+	samplePoints[rand.Intn(nbSamples)].setInfinity()
+	samplePoints[rand.Intn(nbSamples)].setInfinity()
+
 	// final scalar to use in double and add method (without mixer factor)
 	// n(n+1)(2n+1)/6  (sum of the squares from 1 to n)
 	var scalar big.Int
@@ -322,7 +394,12 @@ func TestMultiExpG2(t *testing.T) {
 		genScalar,
 	))
 
-	properties.Property("[G2] Multi exponentation (c=5, c=16) should be consistent with sum of square", prop.ForAll(
+	// cRange is generated from template and contains the available parameters for the multiexp window size
+	// for g2, CI suffers with large c size since it needs to allocate a lot of memory for the buckets.
+	// test only "odd" and "even" (ie windows size divide word size vs not)
+	cRange := []uint64{5, 16}
+
+	properties.Property(fmt.Sprintf("[G2] Multi exponentation (c in %v) should be consistent with sum of square", cRange), prop.ForAll(
 		func(mixer fr.Element) bool {
 
 			var expected G2Jac
@@ -341,13 +418,62 @@ func TestMultiExpG2(t *testing.T) {
 					FromMont()
 			}
 
-			scalars5, _ := partitionScalars(sampleScalars[:], 5, false, runtime.NumCPU())
-			scalars16, _ := partitionScalars(sampleScalars[:], 16, false, runtime.NumCPU())
+			results := make([]G2Jac, len(cRange)+1)
+			for i, c := range cRange {
+				scalars, _ := partitionScalars(sampleScalars[:], c, false, runtime.NumCPU())
+				msmInnerG2Jac(&results[i], int(c), samplePoints[:], scalars, false)
+				if c == 16 {
+					// split the first chunk
+					msmInnerG2Jac(&results[len(results)-1], 16, samplePoints[:], scalars, true)
+				}
+			}
+			for i := 1; i < len(results); i++ {
+				if !results[i].Equal(&results[i-1]) {
+					return false
+				}
+			}
+			return true
+		},
+		genScalar,
+	))
 
-			var r5, r16 G2Jac
-			r5.msmC5(samplePoints[:], scalars5, false)
-			r16.msmC16(samplePoints[:], scalars16, true)
-			return (r5.Equal(&expected) && r16.Equal(&expected))
+	properties.Property(fmt.Sprintf("[G2] Multi exponentation (c in %v) of points at infinity should output a point at infinity", cRange), prop.ForAll(
+		func(mixer fr.Element) bool {
+
+			var samplePointsZero [nbSamples]G2Affine
+			copy(samplePointsZero[:], samplePoints[:])
+
+			var expected G2Jac
+
+			// compute expected result with double and add
+			var finalScalar, mixerBigInt big.Int
+			finalScalar.Mul(&scalar, mixer.ToBigIntRegular(&mixerBigInt))
+			expected.ScalarMultiplication(&g2Gen, &finalScalar)
+
+			// mixer ensures that all the words of a fpElement are set
+			var sampleScalars [nbSamples]fr.Element
+
+			for i := 1; i <= nbSamples; i++ {
+				sampleScalars[i-1].SetUint64(uint64(i)).
+					Mul(&sampleScalars[i-1], &mixer).
+					FromMont()
+			}
+
+			results := make([]G2Jac, len(cRange)+1)
+			for i, c := range cRange {
+				scalars, _ := partitionScalars(sampleScalars[:], c, false, runtime.NumCPU())
+				msmInnerG2Jac(&results[i], int(c), samplePointsZero[:], scalars, false)
+				if c == 16 {
+					// split the first chunk
+					msmInnerG2Jac(&results[len(results)-1], 16, samplePointsZero[:], scalars, true)
+				}
+			}
+			for i := 1; i < len(results); i++ {
+				if !results[i].Equal(&results[i-1]) {
+					return false
+				}
+			}
+			return true
 		},
 		genScalar,
 	))
@@ -378,7 +504,7 @@ func TestMultiExpG2(t *testing.T) {
 			var finalBigScalar fr.Element
 			var finalBigScalarBi big.Int
 			var op1ScalarMul G2Affine
-			finalBigScalar.SetString("9455").Mul(&finalBigScalar, &mixer)
+			finalBigScalar.SetUint64(9455).Mul(&finalBigScalar, &mixer)
 			finalBigScalar.ToBigIntRegular(&finalBigScalarBi)
 			op1ScalarMul.ScalarMultiplication(&g2GenAff, &finalBigScalarBi)
 

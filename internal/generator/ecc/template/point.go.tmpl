@@ -52,6 +52,13 @@ func (p *{{ $TAffine }}) Set(a *{{ $TAffine }}) *{{ $TAffine }} {
        return p
 }
 
+// setInfinity sets p to O
+func (p *{{ $TAffine }}) setInfinity() *{{ $TAffine }} {
+	p.X.SetZero()
+	p.Y.SetZero()
+	return p
+}
+
 // ScalarMultiplication computes and returns p = a ⋅ s
 func (p *{{ $TAffine }}) ScalarMultiplication(a *{{ $TAffine }}, s *big.Int) *{{ $TAffine }} {
 	var _p {{ $TJacobian }}
@@ -60,6 +67,16 @@ func (p *{{ $TAffine }}) ScalarMultiplication(a *{{ $TAffine }}, s *big.Int) *{{
 	p.FromJacobian(&_p)
 	return p
 }
+
+{{- if eq .PointName "g1"}}
+// ScalarMultiplicationAffine computes and returns p = a ⋅ s
+// Takes an affine point and returns a Jacobian point (useful for KZG)
+func (p *{{ $TJacobian }}) ScalarMultiplicationAffine(a *{{ $TAffine }}, s *big.Int) *{{ $TJacobian }} {
+	p.FromAffine(a)
+	p.mulGLV(p, s)
+	return p
+}
+{{- end}}
 
 // Add adds two point in affine coordinates.
 // This should rarely be used as it is very inefficient compared to Jacobian
@@ -352,7 +369,7 @@ func (p *{{ $TJacobian }}) String() string {
 	return _p.String()
 }
 
-// FromAffine sets p = Q, p in Jacboian, Q in affine
+// FromAffine sets p = Q, p in Jacobian, Q in affine
 func (p *{{ $TJacobian }}) FromAffine(Q *{{ $TAffine }}) *{{ $TJacobian }} {
 	if Q.IsInfinity() {
 		p.Z.SetZero()
@@ -1089,17 +1106,17 @@ func (p *{{ $TJacobianExtended }}) add(q *{{ $TJacobianExtended }}) *{{ $TJacobi
 		return p
 	}
 
-	var A, B, X1ZZ2, X2ZZ1, Y1ZZZ2, Y2ZZZ1 {{.CoordType}}
+	var A, B, U1, U2, S1, S2 {{.CoordType}}
 
 	// p2: q, p1: p
-	X2ZZ1.Mul(&q.X, &p.ZZ)
-	X1ZZ2.Mul(&p.X, &q.ZZ)
-	A.Sub(&X2ZZ1, &X1ZZ2)
-	Y2ZZZ1.Mul(&q.Y, &p.ZZZ)
-	Y1ZZZ2.Mul(&p.Y, &q.ZZZ)
-	B.Sub(&Y2ZZZ1, &Y1ZZZ2)
+	U2.Mul(&q.X, &p.ZZ)
+	U1.Mul(&p.X, &q.ZZ)
+	A.Sub(&U2, &U1)
+	S2.Mul(&q.Y, &p.ZZZ)
+	S1.Mul(&p.Y, &q.ZZZ)
+	B.Sub(&S2, &S1)
 
-	if A.IsZero() {
+ 	if A.IsZero() {
 		if B.IsZero() {
 				return p.double(q)
 
@@ -1109,11 +1126,8 @@ func (p *{{ $TJacobianExtended }}) add(q *{{ $TJacobianExtended }}) *{{ $TJacobi
 		return p
 	}
 
-	var U1, U2, S1, S2, P, R, PP, PPP, Q, V {{.CoordType}}
-    U1.Mul(&p.X, &q.ZZ)
-    U2.Mul(&q.X, &p.ZZ)
-    S1.Mul(&p.Y, &q.ZZZ)
-    S2.Mul(&q.Y, &p.ZZZ)
+
+	var P, R, PP, PPP, Q, V {{.CoordType}}
     P.Sub(&U2, &U1)
     R.Sub(&S2, &S1)
     PP.Square(&P)
@@ -1313,9 +1327,9 @@ func (p *{{ $TProjective }}) FromAffine(Q *{{ $TAffine }}) *{{ $TProjective }} {
 
 {{- if eq .PointName "g1"}}
 // BatchProjectiveToAffine{{ toUpper .PointName }} converts points in Projective coordinates to Affine coordinates
-// performing a single field inversion (Montgomery batch inversion trick)
-// result must be allocated with len(result) == len(points)
-func BatchProjectiveToAffine{{ toUpper .PointName }}(points []{{ $TProjective }}, result []{{ $TAffine }}) {
+// performing a single field inversion (Montgomery batch inversion trick).
+func BatchProjectiveToAffine{{ toUpper .PointName }}(points []{{ $TProjective }}) []{{ $TAffine }} {
+	result := make([]{{ $TAffine }}, len(points))
 	zeroes := make([]bool, len(points))
 	accumulator := fp.One()
 
@@ -1335,7 +1349,7 @@ func BatchProjectiveToAffine{{ toUpper .PointName }}(points []{{ $TProjective }}
 
 	for i := len(points) - 1; i >= 0; i-- {
 		if zeroes[i] {
-			// do nothing, X and Y are zeroes in affine.
+			// do nothing, (X=0, Y=0) is infinity point in affine
 			continue
 		}
 		result[i].X.Mul(&result[i].X, &accInverse)
@@ -1346,7 +1360,7 @@ func BatchProjectiveToAffine{{ toUpper .PointName }}(points []{{ $TProjective }}
 	parallel.Execute(len(points), func(start, end int) {
 		for i := start; i < end; i++ {
 			if zeroes[i] {
-				// do nothing, X and Y are zeroes in affine.
+                // do nothing, (X=0, Y=0) is infinity point in affine
 				continue
 			}
 			a := result[i].X
@@ -1354,6 +1368,7 @@ func BatchProjectiveToAffine{{ toUpper .PointName }}(points []{{ $TProjective }}
 			result[i].Y.Mul(&points[i].y, &a)
 		}
 	})
+    return result
 }
 {{end }}
 {{end }}
@@ -1363,9 +1378,9 @@ func BatchProjectiveToAffine{{ toUpper .PointName }}(points []{{ $TProjective }}
 {{- if eq .PointName "g1"}}
 
 // BatchJacobianToAffine{{ toUpper .PointName }} converts points in Jacobian coordinates to Affine coordinates
-// performing a single field inversion (Montgomery batch inversion trick)
-// result must be allocated with len(result) == len(points)
-func BatchJacobianToAffine{{ toUpper .PointName }}(points []{{ $TJacobian }}, result []{{ $TAffine }}) {
+// performing a single field inversion (Montgomery batch inversion trick).
+func BatchJacobianToAffine{{ toUpper .PointName }}(points []{{ $TJacobian }}) []{{ $TAffine }} {
+	result := make([]{{ $TAffine }}, len(points))
 	zeroes := make([]bool, len(points))
 	accumulator := fp.One()
 
@@ -1385,7 +1400,7 @@ func BatchJacobianToAffine{{ toUpper .PointName }}(points []{{ $TJacobian }}, re
 
 	for i := len(points) - 1; i >= 0; i-- {
 		if zeroes[i] {
-			// do nothing, X and Y are zeroes in affine.
+			// do nothing, (X=0, Y=0) is infinity point in affine
 			continue
 		}
 		result[i].X.Mul(&result[i].X, &accInverse)
@@ -1396,7 +1411,7 @@ func BatchJacobianToAffine{{ toUpper .PointName }}(points []{{ $TJacobian }}, re
 	parallel.Execute( len(points), func(start, end int) {
 		for i:=start; i < end; i++ {
 			if zeroes[i] {
-				// do nothing, X and Y are zeroes in affine.
+				// do nothing, (X=0, Y=0) is infinity point in affine
 				continue
 			}
 			var a, b fp.Element
@@ -1408,6 +1423,7 @@ func BatchJacobianToAffine{{ toUpper .PointName }}(points []{{ $TJacobian }}, re
 		}
 	})
 
+    return result
 }
 {{- end}}
 
@@ -1475,8 +1491,7 @@ func BatchScalarMultiplication{{ toUpper .PointName }}(base *{{ $TAffine }}, sca
 
 	{{- if eq .PointName "g1"}}
 		// convert our base exp table into affine to use AddMixed
-		baseTableAff := make([]{{ $TAffine }}, (1<<(c-1)))
-		BatchJacobianToAffine{{ toUpper .PointName}}(baseTable, baseTableAff)
+		baseTableAff := BatchJacobianToAffine{{ toUpper .PointName}}(baseTable)
 		toReturn := make([]{{ $TJacobian }}, len(scalars))
 	{{- else}}
 		toReturn := make([]{{ $TAffine }}, len(scalars))
@@ -1537,8 +1552,7 @@ func BatchScalarMultiplication{{ toUpper .PointName }}(base *{{ $TAffine }}, sca
 	})
 
 	{{- if eq .PointName "g1"}}
-		toReturnAff := make([]{{ $TAffine }}, len(scalars))
-		BatchJacobianToAffine{{ toUpper .PointName}}(toReturn, toReturnAff)
+		toReturnAff := BatchJacobianToAffine{{ toUpper .PointName}}(toReturn)
 		return toReturnAff
 	{{- else}}
 		return toReturn
